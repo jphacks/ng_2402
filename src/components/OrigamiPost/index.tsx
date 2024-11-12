@@ -103,7 +103,7 @@ export const OrigamiPost = () => {
       10,
       1000
     );
-    camera.position.set(20, 70, 100); // 右斜め上からモデルを見るようにカメラ位置を設定
+    camera.position.set(0, 0, 100); // 右斜め上からモデルを見るようにカメラ位置を設定
     camera.lookAt(new THREE.Vector3(0, 0, 0)); // モデルの中心を見るようにカメラの向きを設定
     scene.add(camera);
     cameraRef.current = camera;
@@ -152,9 +152,18 @@ export const OrigamiPost = () => {
         console.log("Clicked position on edge:", point);
 
         // pointで点を描画
-        const geometry = new THREE.BufferGeometry().setFromPoints([point]);
-        const material = new THREE.PointsMaterial({ color: 0x000000 });
-        const pointMesh = new THREE.Points(geometry, material);
+        // const geometry = new THREE.BufferGeometry().setFromPoints([point]);
+        // const material = new THREE.PointsMaterial({
+        //   color: 0x000000,
+        //   size: 3,
+        //   sizeAttenuation: true,
+        // });
+        // const pointMesh = new THREE.Points(geometry, material);
+        // scene.add(pointMesh);
+        const geometry = new THREE.SphereGeometry(1, 32, 32);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+        const pointMesh = new THREE.Mesh(geometry, material);
+        pointMesh.position.set(point.x, point.y, point.z);
         scene.add(pointMesh);
 
         points.push([point.x, point.y, point.z]);
