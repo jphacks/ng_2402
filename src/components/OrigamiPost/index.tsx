@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/Addons.js";
 import { separateBoard } from "./logics/separateBoard";
 import { getAllIntersections } from "./logics/getAllIntersections";
+import { isOnLeftSide } from "./logics/isOnLeftSide";
 
 type Point = [number, number, number];
 type Board = Point[];
@@ -65,8 +66,6 @@ export const OrigamiPost = () => {
   const controlsRef = useRef<OrbitControls | null>(null);
   const raycasterRef = useRef<THREE.Raycaster | null>(null);
 
-  const points: Point[] = [];
-
   const [fixBoards, setFixBoards] = useState<Board[]>([initialBoard]);
   const [moveBoards, setMoveBoards] = useState<Board[]>([]);
   const [rotateAxis, setRotateAxis] = useState<[Point, Point] | []>([]);
@@ -77,6 +76,10 @@ export const OrigamiPost = () => {
   useEffect(() => {
     const canvas = canvasRef.current!;
     let scene = sceneRef.current;
+    let renderer = rendererRef.current;
+    let camera = cameraRef.current;
+    let controls = controlsRef.current;
+    let raycaster = raycasterRef.current;
 
     if (!scene) {
       scene = new THREE.Scene();
@@ -88,28 +91,34 @@ export const OrigamiPost = () => {
       height: window.innerHeight,
     };
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-    });
-    renderer.setSize(sizes.width, sizes.height);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    rendererRef.current = renderer;
+    if (!renderer) {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: true,
+      });
+      renderer.setSize(sizes.width, sizes.height);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      rendererRef.current = renderer;
+    }
 
-    const camera = new THREE.PerspectiveCamera(
-      40,
-      sizes.width / sizes.height,
-      10,
-      1000
-    );
-    camera.position.set(0, 0, 100); // 右斜め上からモデルを見るようにカメラ位置を設定
-    camera.lookAt(new THREE.Vector3(0, 0, 0)); // モデルの中心を見るようにカメラの向きを設定
-    scene.add(camera);
-    cameraRef.current = camera;
+    if (!camera) {
+      camera = new THREE.PerspectiveCamera(
+        40,
+        sizes.width / sizes.height,
+        10,
+        1000
+      );
+      camera.position.set(0, 0, 100); // 右斜め上からモデルを見るようにカメラ位置を設定
+      camera.lookAt(new THREE.Vector3(0, 0, 0)); // モデルの中心を見るようにカメラの向きを設定
+      scene.add(camera);
+      cameraRef.current = camera;
+    }
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controlsRef.current = controls;
+    if (!controls) {
+      controls = new OrbitControls(camera, renderer.domElement);
+      controlsRef.current = controls;
+    }
 
     const render = () => {
       controls.update();
@@ -119,7 +128,10 @@ export const OrigamiPost = () => {
 
     fixBoards.forEach((board) => renderBoard(scene, board));
 
-    raycasterRef.current = new THREE.Raycaster();
+    if (!raycaster) {
+      raycaster = new THREE.Raycaster();
+      raycasterRef.current = raycaster;
+    }
 
     render();
 
@@ -132,20 +144,20 @@ export const OrigamiPost = () => {
       renderer.setPixelRatio(window.devicePixelRatio);
     });
 
+    const points: Point[] = [];
     canvas.addEventListener("click", (event) => {
       const mouse = new THREE.Vector2();
       mouse.x = (event.clientX / sizes.width) * 2 - 1;
       mouse.y = -(event.clientY / sizes.height) * 2 + 1;
 
       // Raycasterのセットアップ
-      if (!raycasterRef.current) return;
-      raycasterRef.current.setFromCamera(mouse, camera);
+      raycaster.setFromCamera(mouse, camera);
 
       // エッジに対してRaycasterを適用して交差を調べる
       const edges = scene.children.filter(
         (child) => child.type === "LineSegments"
       );
-      const intersects = raycasterRef.current.intersectObjects(edges, true);
+      const intersects = raycaster.intersectObjects(edges, true);
 
       if (intersects.length > 0) {
         const point = intersects[0].point; // 最初の交差点の座標を取得
@@ -170,29 +182,56 @@ export const OrigamiPost = () => {
 
         if (points.length >= 2) {
           // TODO: 同じ板上にある2点を選択していない場合エラーになる
-
           // この2点を結ぶ線で板を分割する。
           const axis: [Point, Point] = [[...points[0]], [...points[1]]];
           setRotateAxis(axis);
 
-          // 板上に回転軸がある板を分割する板とする
-          const targetBoard = fixBoards.find((board) => {
+          const leftBoards: Board[] = [];
+          const rightBoards: Board[] = [];
+
+          fixBoards.forEach((board) => {
             const intersections = getAllIntersections({
               board,
               rotateAxis: axis,
             });
-            return intersections.length === 2;
+
+            if (intersections.length === 2) {
+              // 板を分割する場合
+              const separatedBoard = separateBoard({
+                board,
+                rotateAxis: axis,
+              });
+              if (!separatedBoard) return alert("Failed to separate board.");
+
+              const { leftBoard, rightBoard } = separatedBoard;
+              leftBoards.push(leftBoard);
+              rightBoards.push(rightBoard);
+            } else {
+              // 板を分割しない場合
+              // 板が回転軸の左側にあるか、右側にあるかを判定
+              // TODO: 一部分だけ回転軸の左右にある場合はエラーになる。
+
+              console.log(intersections);
+
+              const isLeftSide = board.map((point) =>
+                isOnLeftSide({
+                  point,
+                  axis1: axis[0],
+                  axis2: axis[1],
+                })
+              );
+              const isAllLeft = isLeftSide.every((b) => b);
+              const isAllRight = isLeftSide.every((b) => !b);
+
+              if (isAllLeft) {
+                leftBoards.push(board);
+              } else if (isAllRight) {
+                rightBoards.push(board);
+              } else {
+                alert("Failed to separate board.");
+              }
+            }
           });
-
-          if (!targetBoard) return alert("Failed to find target board.");
-
-          const separatedBoard = separateBoard({
-            board: targetBoard,
-            rotateAxis: axis,
-          });
-          console.log("Separated board:", separatedBoard);
-
-          if (!separatedBoard) return alert("Failed to separate board.");
 
           // boardを削除する
           scene.children = scene.children.filter(
@@ -204,16 +243,11 @@ export const OrigamiPost = () => {
             (child) => child.type !== "Points"
           );
 
-          // 新しい板を描画する
-          const { leftBoard, rightBoard } = separatedBoard;
-          setFixBoards([
-            ...fixBoards.filter((board) => board !== targetBoard),
-            leftBoard,
-          ]);
-          setMoveBoards([rightBoard]);
+          setFixBoards(leftBoards);
+          setMoveBoards(rightBoards);
 
-          renderBoard(scene, leftBoard);
-          renderBoard(scene, rightBoard);
+          leftBoards.forEach((board) => renderBoard(scene, board));
+          rightBoards.forEach((board) => renderBoard(scene, board));
 
           points.length = 0;
 
@@ -286,9 +320,12 @@ export const OrigamiPost = () => {
       boards.push(newBoard);
     }
 
-    console.log(boards);
+    // boardsの格値を少数第2位までにする
+    const roundedBoards = boards.map((board) =>
+      board.map((point) => point.map((v) => Math.round(v * 100) / 100) as Point)
+    );
 
-    setFixBoards(boards);
+    setFixBoards(roundedBoards);
     setMoveBoards([]);
     setRotateAxis([]);
     setFoldingAngle(0);
