@@ -44,6 +44,10 @@ export const useRegisterOrigami: UseRegisterOrigami = ({
   const description = inputStepObject[procedureIndex.toString()].description;
 
   const handleRegisterOrigami = () => {
+    if (!origamiName) {
+      console.error("Origami name is required.");
+      return;
+    }
     if (moveBoards.length === 0) return;
     if (rotateAxis.length === 0) return;
     // xy平面上の板のうち、z座標が大きい順に、numberOfMoveBoards枚を折る
